@@ -259,3 +259,8 @@ func (c *RawServerConn) rejectWithHeaderFieldsTooLarge(str *stateTrackingStream)
 func (c *RawServerConn) HandleUnidirectionalStream(str *quic.ReceiveStream) {
 	c.rawConn.handleUnidirectionalStream(str, true)
 }
+
+// ConnectionStats returns statistics about the underlying QUIC connection.
+func (c *RawServerConn) ConnectionStats() quic.ConnectionStats {
+	return c.rawConn.ConnectionStats()
+}

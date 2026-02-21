@@ -78,6 +78,8 @@ type oobConn struct {
 
 var _ rawConn = &oobConn{}
 
+func (c *oobConn) UnderlyingPacketConn() net.PacketConn { return c.OOBCapablePacketConn }
+
 func newConn(c OOBCapablePacketConn, supportsDF bool) (*oobConn, error) {
 	rawConn, err := c.SyscallConn()
 	if err != nil {

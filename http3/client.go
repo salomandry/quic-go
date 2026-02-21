@@ -366,6 +366,11 @@ func (c *ClientConn) Context() context.Context {
 	return c.conn.Context()
 }
 
+// ConnectionStats returns statistics about the underlying QUIC connection.
+func (c *ClientConn) ConnectionStats() quic.ConnectionStats {
+	return c.conn.ConnectionStats()
+}
+
 // cancelingReader reads from the io.Reader.
 // It cancels writing on the stream if any error other than io.EOF occurs.
 type cancelingReader struct {

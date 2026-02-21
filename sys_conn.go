@@ -37,6 +37,9 @@ type rawConn interface {
 	io.Closer
 
 	capabilities() connCapabilities
+	// UnderlyingPacketConn returns the underlying net.PacketConn for the current path.
+	// It returns nil if the underlying type does not expose a net.PacketConn.
+	UnderlyingPacketConn() net.PacketConn
 }
 
 // OOBCapablePacketConn is a connection that allows the reading of ECN bits from the IP header.
@@ -141,3 +144,5 @@ func (c *basicConn) WritePacket(b []byte, addr net.Addr, _ []byte, gsoSize uint1
 }
 
 func (c *basicConn) capabilities() connCapabilities { return connCapabilities{DF: c.supportsDF} }
+
+func (c *basicConn) UnderlyingPacketConn() net.PacketConn { return c.PacketConn }

@@ -195,6 +195,44 @@ func (c *MockRawConnSetReadDeadlineCall) DoAndReturn(f func(time.Time) error) *M
 	return c
 }
 
+// UnderlyingPacketConn mocks base method.
+func (m *MockRawConn) UnderlyingPacketConn() net.PacketConn {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UnderlyingPacketConn")
+	ret0, _ := ret[0].(net.PacketConn)
+	return ret0
+}
+
+// UnderlyingPacketConn indicates an expected call of UnderlyingPacketConn.
+func (mr *MockRawConnMockRecorder) UnderlyingPacketConn() *MockRawConnUnderlyingPacketConnCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnderlyingPacketConn", reflect.TypeOf((*MockRawConn)(nil).UnderlyingPacketConn))
+	return &MockRawConnUnderlyingPacketConnCall{Call: call}
+}
+
+// MockRawConnUnderlyingPacketConnCall wrap *gomock.Call
+type MockRawConnUnderlyingPacketConnCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockRawConnUnderlyingPacketConnCall) Return(arg0 net.PacketConn) *MockRawConnUnderlyingPacketConnCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockRawConnUnderlyingPacketConnCall) Do(f func() net.PacketConn) *MockRawConnUnderlyingPacketConnCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockRawConnUnderlyingPacketConnCall) DoAndReturn(f func() net.PacketConn) *MockRawConnUnderlyingPacketConnCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // WritePacket mocks base method.
 func (m *MockRawConn) WritePacket(b []byte, addr net.Addr, packetInfoOOB []byte, gsoSize uint16, ecn protocol.ECN) (int, error) {
 	m.ctrl.T.Helper()

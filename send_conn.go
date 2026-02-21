@@ -18,6 +18,7 @@ type sendConn interface {
 	ChangeRemoteAddr(addr net.Addr, info packetInfo)
 
 	capabilities() connCapabilities
+	UnderlyingPacketConn() net.PacketConn
 }
 
 type remoteAddrInfo struct {

@@ -131,6 +131,10 @@ func (c *rawConn) ConnectionState() quic.ConnectionState {
 	return c.conn.ConnectionState()
 }
 
+func (c *rawConn) ConnectionStats() quic.ConnectionStats {
+	return c.conn.ConnectionStats()
+}
+
 func (c *rawConn) clearStream(id quic.StreamID) {
 	c.streamMx.Lock()
 	defer c.streamMx.Unlock()
