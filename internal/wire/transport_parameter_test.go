@@ -14,6 +14,8 @@ import (
 	"github.com/quic-go/quic-go/internal/qerr"
 	"github.com/quic-go/quic-go/quicvarint"
 
+	ossfuzzseeds "github.com/quic-go/go-ossfuzz-seeds"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -460,6 +462,20 @@ func TestTransportParameterUnknownParameters(t *testing.T) {
 	require.Equal(t, protocol.ByteCount(0x42), p.InitialMaxStreamDataBidiRemote)
 }
 
+func TestSessionTicketTransportParameterRejectsUnknownParameter(t *testing.T) {
+	b := (&TransportParameters{
+		ActiveConnectionIDLimit: 2,
+		MaxDatagramFrameSize:    protocol.InvalidByteCount,
+	}).MarshalForSessionTicket(nil)
+	b = quicvarint.Append(b, 0x42)
+	b = quicvarint.Append(b, 6)
+	b = append(b, []byte("foobar")...)
+
+	var p TransportParameters
+	err := p.UnmarshalFromSessionTicket(b)
+	require.EqualError(t, err, "unknown transport parameter 0x42 in session ticket")
+}
+
 func TestTransportParameterRejectsDuplicateParameters(t *testing.T) {
 	// write first parameter
 	b := quicvarint.Append(nil, uint64(initialMaxStreamDataBidiLocalParameterID))
@@ -641,6 +657,7 @@ func TestTransportParametersValidFor0RTT(t *testing.T) {
 		MaxUniStreamNum:                6,
 		ActiveConnectionIDLimit:        7,
 		MaxDatagramFrameSize:           1000,
+		EnableResetStreamAt:            true,
 	}
 
 	tests := []struct {
@@ -652,6 +669,11 @@ func TestTransportParametersValidFor0RTT(t *testing.T) {
 			name:   "No Changes",
 			modify: func(p *TransportParameters) {},
 			valid:  true,
+		},
+		{
+			name:   "ResetStreamAt disabled",
+			modify: func(p *TransportParameters) { p.EnableResetStreamAt = false },
+			valid:  false,
 		},
 		{
 			name: "InitialMaxStreamDataBidiLocal reduced",
@@ -745,6 +767,12 @@ func TestTransportParametersValidFor0RTT(t *testing.T) {
 			require.Equal(t, tt.valid, p.ValidFor0RTT(saved))
 		})
 	}
+	t.Run("ResetStreamAt enabled", func(t *testing.T) {
+		p := *saved
+		withoutResetStreamAt := *saved
+		withoutResetStreamAt.EnableResetStreamAt = false
+		require.True(t, p.ValidFor0RTT(&withoutResetStreamAt))
+	})
 }
 
 func TestTransportParametersValidAfter0RTT(t *testing.T) {
@@ -757,6 +785,7 @@ func TestTransportParametersValidAfter0RTT(t *testing.T) {
 		MaxUniStreamNum:                6,
 		ActiveConnectionIDLimit:        7,
 		MaxDatagramFrameSize:           1000,
+		EnableResetStreamAt:            true,
 	}
 
 	tests := []struct {
@@ -768,6 +797,11 @@ func TestTransportParametersValidAfter0RTT(t *testing.T) {
 			name:   "no changes",
 			modify: func(p *TransportParameters) {},
 			reject: false,
+		},
+		{
+			name:   "ResetStreamAt disabled",
+			modify: func(p *TransportParameters) { p.EnableResetStreamAt = false },
+			reject: true,
 		},
 		{
 			name: "InitialMaxStreamDataBidiLocal reduced",
@@ -870,6 +904,12 @@ func TestTransportParametersValidAfter0RTT(t *testing.T) {
 			}
 		})
 	}
+	t.Run("ResetStreamAt enabled", func(t *testing.T) {
+		p := *saved
+		withoutResetStreamAt := *saved
+		withoutResetStreamAt.EnableResetStreamAt = false
+		require.True(t, p.ValidForUpdate(&withoutResetStreamAt))
+	})
 }
 
 func BenchmarkTransportParameters(b *testing.B) {
@@ -936,6 +976,8 @@ func benchmarkTransportParameters(b *testing.B, withPreferredAddress bool) {
 }
 
 func FuzzTransportParameters(f *testing.F) {
+	corpus := ossfuzzseeds.New(f)
+
 	savedParams := (&TransportParameters{
 		InitialMaxStreamDataBidiLocal:  1234,
 		InitialMaxStreamDataBidiRemote: 2345,
@@ -986,7 +1028,7 @@ func FuzzTransportParameters(f *testing.F) {
 			},
 		}).Marshal(protocol.PerspectiveServer), savedParams},
 	} {
-		f.Add(seed.Data, seed.SavedData)
+		corpus.Add(seed.Data, seed.SavedData)
 	}
 
 	f.Fuzz(func(t *testing.T, data, savedData []byte) {

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go/internal/ackhandler"
-	"github.com/quic-go/quic-go/internal/flowcontrol"
 	"github.com/quic-go/quic-go/internal/handshake"
 	"github.com/quic-go/quic-go/internal/monotime"
 	"github.com/quic-go/quic-go/internal/protocol"
@@ -156,7 +155,7 @@ type Conn struct {
 	receivedPacketHandler ackhandler.ReceivedPacketHandler
 	retransmissionQueue   *retransmissionQueue
 	framer                *framer
-	connFlowController    flowcontrol.ConnectionFlowController
+	connFlowController    *connectionFlowController
 	tokenStoreKey         string                    // only set for the client
 	tokenGenerator        *handshake.TokenGenerator // only set for the server
 
@@ -165,7 +164,7 @@ type Conn struct {
 	packer        packer
 	mtuDiscoverer mtuDiscoverer // initialized when the transport parameters are received
 
-	currentMTUEstimate atomic.Uint32
+	maxPayloadSizeEstimate atomic.Uint32
 
 	initialStream       *initialCryptoStream
 	handshakeStream     *cryptoStream
@@ -322,7 +321,7 @@ var newConnection = func(
 		s.qlogger,
 		s.logger,
 	)
-	s.currentMTUEstimate.Store(uint32(estimateMaxPayloadSize(protocol.ByteCount(s.config.InitialPacketSize))))
+	s.maxPayloadSizeEstimate.Store(uint32(estimateMaxPayloadSize(protocol.ByteCount(s.config.InitialPacketSize))))
 	statelessResetToken := statelessResetter.GetStatelessResetToken(srcConnID)
 	params := &wire.TransportParameters{
 		InitialMaxStreamDataBidiLocal:   protocol.ByteCount(s.config.InitialStreamReceiveWindow),
@@ -451,7 +450,7 @@ var newClientConnection = func(
 		s.qlogger,
 		s.logger,
 	)
-	s.currentMTUEstimate.Store(uint32(estimateMaxPayloadSize(protocol.ByteCount(s.config.InitialPacketSize))))
+	s.maxPayloadSizeEstimate.Store(uint32(estimateMaxPayloadSize(protocol.ByteCount(s.config.InitialPacketSize))))
 	oneRTTStream := newCryptoStream()
 	params := &wire.TransportParameters{
 		InitialMaxStreamDataBidiRemote: protocol.ByteCount(s.config.InitialStreamReceiveWindow),
@@ -521,7 +520,7 @@ func (c *Conn) preSetup() {
 		false, // ACK_FREQUENCY is not supported yet
 	)
 	c.rttStats = utils.NewRTTStats()
-	c.connFlowController = flowcontrol.NewConnectionFlowController(
+	c.connFlowController = newConnectionFlowController(
 		protocol.ByteCount(c.config.InitialConnectionReceiveWindow),
 		protocol.ByteCount(c.config.MaxConnectionReceiveWindow),
 		func(size protocol.ByteCount) bool {
@@ -2128,8 +2127,10 @@ func (c *Conn) handleAckFrame(frame *wire.AckFrame, encLevel protocol.Encryption
 	}
 	// If one of the acknowledged packets was a Path MTU probe packet, this might have increased the Path MTU estimate.
 	if c.mtuDiscoverer != nil {
-		if mtu := c.mtuDiscoverer.CurrentSize(); mtu > protocol.ByteCount(c.currentMTUEstimate.Load()) {
-			c.currentMTUEstimate.Store(uint32(mtu))
+		mtu := c.mtuDiscoverer.CurrentSize()
+		maxPayloadSize := estimateMaxPayloadSize(mtu)
+		if maxPayloadSize > protocol.ByteCount(c.maxPayloadSizeEstimate.Load()) {
+			c.maxPayloadSizeEstimate.Store(uint32(maxPayloadSize))
 			c.sentPacketHandler.SetMaxDatagramSize(mtu)
 		}
 	}
@@ -2928,7 +2929,7 @@ func (c *Conn) OpenUniStreamSync(ctx context.Context) (*SendStream, error) {
 	return c.streamsMap.OpenUniStreamSync(ctx)
 }
 
-func (c *Conn) newFlowController(id protocol.StreamID) flowcontrol.StreamFlowController {
+func (c *Conn) newFlowController(id protocol.StreamID) *streamFlowController {
 	initialSendWindow := c.peerParams.InitialMaxStreamDataUni
 	if id.Type() == protocol.StreamTypeBidi {
 		if id.InitiatedBy() == c.perspective {
@@ -2937,7 +2938,7 @@ func (c *Conn) newFlowController(id protocol.StreamID) flowcontrol.StreamFlowCon
 			initialSendWindow = c.peerParams.InitialMaxStreamDataBidiLocal
 		}
 	}
-	return flowcontrol.NewStreamFlowController(
+	return newStreamFlowController(
 		id,
 		c.connFlowController,
 		protocol.ByteCount(c.config.InitialStreamReceiveWindow),
@@ -3031,7 +3032,7 @@ func (c *Conn) SendDatagram(p []byte) error {
 	// Under many circumstances we could send a few more bytes.
 	maxDataLen := min(
 		f.MaxDataLen(c.peerParams.MaxDatagramFrameSize, c.version),
-		protocol.ByteCount(c.currentMTUEstimate.Load()),
+		protocol.ByteCount(c.maxPayloadSizeEstimate.Load()),
 	)
 	if protocol.ByteCount(len(p)) > maxDataLen {
 		return &DatagramTooLargeError{MaxDatagramPayloadSize: int64(maxDataLen)}
