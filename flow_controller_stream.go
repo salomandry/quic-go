@@ -127,6 +127,7 @@ func (c *streamFlowController) UpdateSendWindow(offset protocol.ByteCount) (upda
 	return false
 }
 
+// TryAddBytesSent adds n bytes if sufficient stream- and connection-level send credit is available.
 func (c *streamFlowController) TryAddBytesSent(n protocol.ByteCount) bool {
 	if c.bytesSent > c.sendWindow || n > c.sendWindow-c.bytesSent {
 		return false
@@ -138,11 +139,21 @@ func (c *streamFlowController) TryAddBytesSent(n protocol.ByteCount) bool {
 	return true
 }
 
-func (c *streamFlowController) SendWindowSize() protocol.ByteCount {
-	// this only happens during connection establishment, when data is sent before we receive the peer's transport parameters
-	if c.bytesSent > c.sendWindow {
-		return 0
+// AddBytesSentWithLimiter adds the limiter-approved portion of the available stream- and connection-level send credit.
+func (c *streamFlowController) AddBytesSentWithLimiter(
+	n protocol.ByteCount,
+	limiter func(int) int,
+) (protocol.ByteCount, bool) {
+	if c.bytesSent >= c.sendWindow {
+		return 0, false
 	}
+	n = min(n, c.sendWindow-c.bytesSent)
+	added, limited := c.connection.AddBytesSentWithLimiter(n, limiter)
+	c.bytesSent += added
+	return added, limited
+}
+
+func (c *streamFlowController) SendWindowSize() protocol.ByteCount {
 	return min(c.sendWindow-c.bytesSent, c.connection.SendWindowSize())
 }
 
@@ -176,7 +187,10 @@ func (c *streamFlowController) GetWindowUpdate(now monotime.Time) protocol.ByteC
 	offset := c.getWindowUpdate(now)
 	if c.receiveWindowSize > oldWindowSize { // auto-tuning enlarged the window size
 		c.logger.Debugf("Increasing receive flow control window for stream %d to %d", c.streamID, c.receiveWindowSize)
-		c.connection.EnsureMinimumWindowSize(protocol.ByteCount(float64(c.receiveWindowSize)*protocol.ConnectionFlowControlMultiplier), now)
+		c.connection.EnsureMinimumWindowSize(
+			protocol.ByteCount(float64(c.receiveWindowSize)*protocol.ConnectionFlowControlMultiplier),
+			now,
+		)
 	}
 	return offset
 }

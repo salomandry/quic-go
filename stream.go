@@ -26,6 +26,7 @@ var errDeadline net.Error = &deadlineError{}
 type streamSender interface {
 	onHasConnectionData()
 	onHasStreamData(protocol.StreamID, *SendStream)
+	onHasStreamRetransmission(protocol.StreamID, *SendStream)
 	onHasStreamControlFrame(protocol.StreamID, streamControlFrameGetter)
 	// must be called without holding the mutex that is acquired by closeForShutdown
 	onStreamCompleted(protocol.StreamID)
@@ -104,7 +105,7 @@ func newStream(
 }
 
 // StreamID returns the stream ID.
-func (s *Stream) StreamID() protocol.StreamID {
+func (s *Stream) StreamID() StreamID {
 	// the result is same for receiveStream and sendStream
 	return s.sendStr.StreamID()
 }
@@ -132,10 +133,16 @@ func (s *Stream) Write(p []byte) (int, error) {
 	return s.sendStr.Write(p)
 }
 
-// WriteImmediately writes data to the stream if it can be queued immediately.
-// See [SendStream.WriteImmediately] for more details.
-func (s *Stream) WriteImmediately(p []byte) error {
-	return s.sendStr.WriteImmediately(p)
+// WriteWithLimit writes data to the stream, subject to an additional send limit.
+// See [SendStream.WriteWithLimit] for more details.
+func (s *Stream) WriteWithLimit(p []byte, limiter func(maxBytes int) int) (int, error) {
+	return s.sendStr.WriteWithLimit(p, limiter)
+}
+
+// TryWriteAll writes data to the stream if it can be queued immediately.
+// See [SendStream.TryWriteAll] for more details.
+func (s *Stream) TryWriteAll(p []byte) error {
+	return s.sendStr.TryWriteAll(p)
 }
 
 // SetReliableBoundary marks the data written to this stream so far as reliable.
@@ -158,12 +165,12 @@ func (s *Stream) CancelRead(errorCode StreamErrorCode) {
 	s.receiveStr.CancelRead(errorCode)
 }
 
-// WaitForReceiveFinalSize waits until the receive side's final size is known.
-// See [ReceiveStream.WaitForFinalSize] for more details.
+// SetReceiveFinalSizeCallback sets a callback that is called when the receive side's final size is known.
+// See [ReceiveStream.SetReceiveFinalSizeCallback] for more details.
 // Most applications don't need this. It is mainly useful for protocol layers
 // that need exact stream final sizes, such as WebTransport flow control accounting.
-func (s *Stream) WaitForReceiveFinalSize(ctx context.Context) (int64, error) {
-	return s.receiveStr.WaitForFinalSize(ctx)
+func (s *Stream) SetReceiveFinalSizeCallback(callback func(int64)) {
+	s.receiveStr.SetReceiveFinalSizeCallback(callback)
 }
 
 // The Context is canceled as soon as the write-side of the stream is closed.
@@ -200,6 +207,10 @@ func (s *Stream) enableResetStreamAt() {
 
 func (s *Stream) popStreamFrame(maxBytes protocol.ByteCount, v protocol.Version) (_ ackhandler.StreamFrame, _ *wire.StreamDataBlockedFrame, hasMore bool) {
 	return s.sendStr.popStreamFrame(maxBytes, v)
+}
+
+func (s *Stream) popRetransmissionFrame(maxBytes protocol.ByteCount, v protocol.Version) (ackhandler.StreamFrame, bool) {
+	return s.sendStr.popRetransmissionFrame(maxBytes, v)
 }
 
 func (s *Stream) getControlFrame(now monotime.Time) (_ ackhandler.Frame, ok, hasMore bool) {

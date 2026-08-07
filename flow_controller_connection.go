@@ -14,7 +14,7 @@ import (
 type connectionFlowController struct {
 	receiveFlowController
 
-	// Protects send-side state, which WriteImmediately can access from application goroutines.
+	// Protects send-side state, which TryWriteAll can access from application goroutines.
 	sendMutex     sync.Mutex
 	bytesSent     protocol.ByteCount
 	sendWindow    protocol.ByteCount
@@ -70,6 +70,7 @@ func (c *connectionFlowController) AddBytesRead(n protocol.ByteCount) (hasWindow
 	return c.hasWindowUpdate()
 }
 
+// TryAddBytesSent adds n bytes if sufficient connection-level send credit is available.
 func (c *connectionFlowController) TryAddBytesSent(n protocol.ByteCount) bool {
 	c.sendMutex.Lock()
 	defer c.sendMutex.Unlock()
@@ -79,6 +80,26 @@ func (c *connectionFlowController) TryAddBytesSent(n protocol.ByteCount) bool {
 	}
 	c.bytesSent += n
 	return true
+}
+
+// AddBytesSentWithLimiter adds the limiter-approved portion of the available connection-level send credit.
+func (c *connectionFlowController) AddBytesSentWithLimiter(
+	n protocol.ByteCount,
+	limiter func(int) int,
+) (protocol.ByteCount, bool) {
+	c.sendMutex.Lock()
+	defer c.sendMutex.Unlock()
+
+	if c.bytesSent >= c.sendWindow {
+		return 0, false
+	}
+	n = min(n, c.sendWindow-c.bytesSent)
+	added := min(
+		max(protocol.ByteCount(limiter(int(n))), 0),
+		n,
+	)
+	c.bytesSent += added
+	return added, added < n
 }
 
 // UpdateSendWindow is called after receiving a MAX_DATA frame.
@@ -97,9 +118,6 @@ func (c *connectionFlowController) SendWindowSize() protocol.ByteCount {
 	c.sendMutex.Lock()
 	defer c.sendMutex.Unlock()
 
-	if c.bytesSent > c.sendWindow {
-		return 0
-	}
 	return c.sendWindow - c.bytesSent
 }
 
