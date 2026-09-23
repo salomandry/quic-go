@@ -828,6 +828,30 @@ type ConnectionStats struct {
 	PacketsLost uint64
 }
 
+// MaxBandwidthBitsPerSecond returns the send-side congestion controller's
+// max bandwidth estimate in bits per second (0 if unavailable).
+func (c *Conn) MaxBandwidthBitsPerSecond() uint64 {
+	type bw interface {
+		MaxBandwidthBitsPerSecond() uint64
+	}
+	if h, ok := c.sentPacketHandler.(bw); ok {
+		return h.MaxBandwidthBitsPerSecond()
+	}
+	return 0
+}
+
+// PacingRateBitsPerSecond returns the send-side pacing rate in bits per second
+// (max bandwidth × pacing gain for BBR; 0 if unavailable).
+func (c *Conn) PacingRateBitsPerSecond() uint64 {
+	type bw interface {
+		PacingRateBitsPerSecond() uint64
+	}
+	if h, ok := c.sentPacketHandler.(bw); ok {
+		return h.PacingRateBitsPerSecond()
+	}
+	return 0
+}
+
 func (c *Conn) ConnectionStats() ConnectionStats {
 	return ConnectionStats{
 		MinRTT:        c.rttStats.MinRTT(),

@@ -284,6 +284,16 @@ func (c *CubicSender) BandwidthEstimate() Bandwidth {
 	return BandwidthFromDelta(c.GetCongestionWindow(), srtt)
 }
 
+// MaxBandwidthBitsPerSecond returns a CUBIC cwnd/srtt estimate in bits/s.
+func (c *CubicSender) MaxBandwidthBitsPerSecond() uint64 {
+	return uint64(c.BandwidthEstimate())
+}
+
+// PacingRateBitsPerSecond matches MaxBandwidthBitsPerSecond for CUBIC.
+func (c *CubicSender) PacingRateBitsPerSecond() uint64 {
+	return c.MaxBandwidthBitsPerSecond()
+}
+
 // OnRetransmissionTimeout is called on an retransmission timeout
 func (c *CubicSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
 	c.largestSentAtLastCutback = protocol.InvalidPacketNumber

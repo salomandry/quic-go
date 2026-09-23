@@ -1148,3 +1148,24 @@ func (h *sentPacketHandler) MigratedPath(now monotime.Time, initialMaxDatagramSi
 	}
 	h.setLossDetectionTimer(now)
 }
+
+type bandwidthReporter interface {
+	MaxBandwidthBitsPerSecond() uint64
+	PacingRateBitsPerSecond() uint64
+}
+
+// MaxBandwidthBitsPerSecond reports the congestion controller's max bandwidth in bits/s when available.
+func (h *sentPacketHandler) MaxBandwidthBitsPerSecond() uint64 {
+	if r, ok := h.Congestion.(bandwidthReporter); ok {
+		return r.MaxBandwidthBitsPerSecond()
+	}
+	return 0
+}
+
+// PacingRateBitsPerSecond reports the congestion controller's pacing rate in bits/s when available.
+func (h *sentPacketHandler) PacingRateBitsPerSecond() uint64 {
+	if r, ok := h.Congestion.(bandwidthReporter); ok {
+		return r.PacingRateBitsPerSecond()
+	}
+	return 0
+}

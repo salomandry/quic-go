@@ -232,3 +232,16 @@ func (b *MCCSender) InRecovery() bool {
 func (b *MCCSender) InSlowStart() bool {
 	return b.state == mccStart
 }
+
+// MaxBandwidthBitsPerSecond returns the MCC pacing rate in bits/s.
+func (b *MCCSender) MaxBandwidthBitsPerSecond() uint64 {
+	if b.pacing_rate <= 0 {
+		return 0
+	}
+	return uint64(b.pacing_rate) * 8
+}
+
+// PacingRateBitsPerSecond matches MaxBandwidthBitsPerSecond for MCC.
+func (b *MCCSender) PacingRateBitsPerSecond() uint64 {
+	return b.MaxBandwidthBitsPerSecond()
+}

@@ -188,8 +188,9 @@ func (b *BBRv1Sender) OnPacketAcked(number protocol.PacketNumber, ackedBytes pro
 	if b.state == DRAIN && priorInFlight < protocol.ByteCount(b.bdp()) {
 		b.entry_PROBE_BW()
 	}
+	// Application-limited samples must not shrink (or lock) the max-bandwidth filter.
 	app_limited := priorInFlight < protocol.ByteCount(b.bdp())
-	if (delivery_rate > b.maxBandwidth || (!app_limited && delivery_rate > 0)) && b.state != DRAIN && !b.inRecovery {
+	if !app_limited && delivery_rate > b.maxBandwidth && b.state != DRAIN && !b.inRecovery {
 		b.maxBandwidth = max(delivery_rate, b.min_maxbandwidth())
 	}
 	if eventTime-b.lastNewMinRTTTime >= monotime.Time((10*time.Second)) && eventTime-b.last_probeRTTStart >= monotime.Time((10*time.Second)) {
@@ -238,4 +239,26 @@ func (b *BBRv1Sender) InRecovery() bool {
 
 func (b *BBRv1Sender) InSlowStart() bool {
 	return b.state == STARTUP
+}
+
+// MaxBandwidthBitsPerSecond returns BBR's windowed max delivery rate (btlbw) in bits/s.
+func (b *BBRv1Sender) MaxBandwidthBitsPerSecond() uint64 {
+	if b.maxBandwidth <= 0 {
+		return 0
+	}
+	return uint64(b.maxBandwidth) * 8
+}
+
+// PacingRateBitsPerSecond returns the current pacing rate (max bandwidth × pacing gain) in bits/s.
+// During ProbeBW this is about 1.25× max bandwidth so the application can fill the probe.
+func (b *BBRv1Sender) PacingRateBitsPerSecond() uint64 {
+	mw := b.MaxBandwidthBitsPerSecond()
+	if mw == 0 {
+		return 0
+	}
+	gain := b.pacing_gain
+	if gain <= 0 {
+		gain = 1
+	}
+	return uint64(float64(mw) * gain)
 }
